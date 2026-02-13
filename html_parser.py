@@ -248,32 +248,75 @@ def parse_eu_html_to_dataframe(url: str) -> pd.DataFrame:
         text = article['text']
         hierarchy = article['hierarchy']
 
-        # 항/호 파싱 (간단 버전 - 추후 개선 가능)
-        # (1), (2) 패턴으로 항 분리
-        para_pattern = re.compile(r'\n\((\d+)\)\s+(.*?)(?=\n\(|$)', re.DOTALL)
+        # 항/호 파싱
+        # 1. 2. 3. 패턴으로 항 분리 (유럽 법령 스타일)
+        para_pattern = re.compile(r'(?:^|\n)\s*(\d+)\.\s+(.*?)(?=(?:\n\s*\d+\.|$))', re.DOTALL | re.MULTILINE)
         paragraphs = list(para_pattern.finditer(text))
 
         if not paragraphs:
-            # 항이 없는 경우 전체를 하나로
-            rows.append({
-                '편': hierarchy['part'],
-                '장': hierarchy['chapter'],
-                '절': '',
-                '조문번호': article_id,
-                '조문제목': title,
-                '항': '',
-                '호': '',
-                '목': '',
-                '세목': '',
-                '원문': text
-            })
+            # 항이 없는 경우 - (a), (b) 패턴만 확인
+            # 여러 줄바꿈과 공백을 허용하는 패턴
+            item_pattern = re.compile(r'\n\s*\(([a-z])\)\s*\n\s*(.*?)(?=\n\s*\([a-z]\)|$)', re.DOTALL)
+            items = list(item_pattern.finditer(text))
+
+            if not items:
+                # 호도 없는 경우 전체를 하나로
+                rows.append({
+                    '편': hierarchy['part'],
+                    '장': hierarchy['chapter'],
+                    '절': '',
+                    '조문번호': article_id,
+                    '조문제목': title,
+                    '항': '',
+                    '호': '',
+                    '목': '',
+                    '세목': '',
+                    '원문': text.strip()
+                })
+            else:
+                # 호만 있는 경우
+                # 첫 번째 호 이전 텍스트 (있으면 본문으로)
+                first_item_start = items[0].start()
+                intro_text = text[:first_item_start].strip()
+
+                if intro_text:
+                    rows.append({
+                        '편': hierarchy['part'],
+                        '장': hierarchy['chapter'],
+                        '절': '',
+                        '조문번호': article_id,
+                        '조문제목': title,
+                        '항': '',
+                        '호': '',
+                        '목': '',
+                        '세목': '',
+                        '원문': intro_text
+                    })
+
+                # 각 호
+                for item_match in items:
+                    item_letter = item_match.group(1)
+                    item_text = item_match.group(2).strip()
+
+                    rows.append({
+                        '편': hierarchy['part'],
+                        '장': hierarchy['chapter'],
+                        '절': '',
+                        '조문번호': article_id,
+                        '조문제목': title,
+                        '항': '',
+                        '호': item_letter,
+                        '목': '',
+                        '세목': '',
+                        '원문': item_text
+                    })
         else:
             for para_match in paragraphs:
                 para_num = para_match.group(1)
                 para_text = para_match.group(2).strip()
 
                 # (a), (b) 패턴으로 호 분리
-                item_pattern = re.compile(r'\n\(([a-z])\)\s+(.*?)(?=\n\(|$)', re.DOTALL)
+                item_pattern = re.compile(r'\n\s*\(([a-z])\)\s*\n\s*(.*?)(?=\n\s*\([a-z]\)|$)', re.DOTALL)
                 items = list(item_pattern.finditer(para_text))
 
                 if not items:
@@ -291,6 +334,26 @@ def parse_eu_html_to_dataframe(url: str) -> pd.DataFrame:
                         '원문': para_text
                     })
                 else:
+                    # 항 내 호들
+                    # 첫 번째 호 이전 텍스트
+                    first_item_start = items[0].start()
+                    para_intro = para_text[:first_item_start].strip()
+
+                    if para_intro:
+                        rows.append({
+                            '편': hierarchy['part'],
+                            '장': hierarchy['chapter'],
+                            '절': '',
+                            '조문번호': article_id,
+                            '조문제목': title,
+                            '항': para_num,
+                            '호': '',
+                            '목': '',
+                            '세목': '',
+                            '원문': para_intro
+                        })
+
+                    # 각 호
                     for item_match in items:
                         item_letter = item_match.group(1)
                         item_text = item_match.group(2).strip()
