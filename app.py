@@ -1148,7 +1148,10 @@ if page == "법령 구조화":
             os.makedirs(structured_dir, exist_ok=True)
 
             # 파일명 생성
-            if input_method == "HTML URL 입력":
+            if struct_country == "일본" and uploaded_file:
+                # 일본 업로드 파일의 경우
+                base_name_structured = f"구조화_{struct_country}_{base_name}"
+            elif input_method == "HTML URL 입력":
                 # HTML URL의 경우 이미 base_name이 생성됨
                 base_name_structured = f"구조화_{base_name}"
             else:
