@@ -50,6 +50,8 @@ COUNTRY_MAP = {
     "뉴질랜드": "NEWZEALAND",
     "한국": "KOREA",
     "미국": "USA",
+    "중국": "CHINA",
+    "일본": "JAPAN",
 }
 
 KOREA_FOLDER = "KOREA"
@@ -934,7 +936,7 @@ if page == "법령 구조화":
     # Step 1: 국가 선택
     struct_country = st.selectbox(
         "📍 국가 선택",
-        list(COUNTRY_MAP.keys()) + ["일본"],
+        list(COUNTRY_MAP.keys()),
         key="struct_country",
         help="먼저 국가를 선택하세요"
     )
