@@ -573,16 +573,27 @@ def _list_pdfs(folder: str) -> list[str]:
 def _list_result_files() -> list[str]:
     """번역 결과 Excel 파일 목록을 반환한다."""
     files = []
-    # 번역비교결과 폴더에서 Excel 파일만 로드
     translation_dir = _safe_join(DATA_DIR, "output", "번역비교결과")
+
+    # 국가별 하위 폴더에서 검색
     if os.path.isdir(translation_dir):
-        files.extend(sorted(glob.glob(os.path.join(translation_dir, "*.xlsx"))))
+        for country in ['미국', '유럽', '독일', '홍콩', '대만', '뉴질랜드', '한국']:
+            country_dir = os.path.join(translation_dir, country)
+            if os.path.isdir(country_dir):
+                files.extend(glob.glob(os.path.join(country_dir, "*.xlsx")))
+
+        # 하위 호환성: 번역비교결과 폴더 루트의 파일도 포함
+        files.extend(glob.glob(os.path.join(translation_dir, "*.xlsx")))
+
     # 하위 호환성: 기존 output 폴더의 번역 파일도 포함
     output_dir = _safe_join(DATA_DIR, "output")
     if os.path.isdir(output_dir):
-        files.extend(sorted(_safe_glob(output_dir, "번역비교_*.xlsx")))
-    # 중복 제거 (순서 유지)
-    return list(dict.fromkeys(files))
+        files.extend(_safe_glob(output_dir, "번역비교_*.xlsx"))
+
+    # 중복 제거 및 최신순 정렬
+    files = list(dict.fromkeys(files))
+    return sorted([f for f in files if not _basename(f).startswith("~$")],
+                  key=os.path.getmtime, reverse=True)
 
 
 def _safe_glob(directory: str, pattern: str) -> list[str]:
@@ -609,8 +620,18 @@ def _list_structured_excels() -> list[str]:
     """구조화법률 폴더 내 구조화 엑셀 파일 목록 (한국법 제외)."""
     structured_dir = _safe_join(DATA_DIR, "output", "구조화법률")
     files = []
+
+    # 국가별 하위 폴더에서 검색 (한국 제외)
     if os.path.isdir(structured_dir):
+        for country in ['미국', '유럽', '독일', '홍콩', '대만', '뉴질랜드']:
+            country_dir = os.path.join(structured_dir, country)
+            if os.path.isdir(country_dir):
+                files.extend(glob.glob(os.path.join(country_dir, "*.xlsx")))
+
+        # 하위 호환성: 구조화법률 폴더 루트의 파일도 포함
         files.extend(_safe_glob(structured_dir, "구조화_*.xlsx"))
+        files.extend(_safe_glob(structured_dir, "EU_*.xlsx"))
+
     # 하위 호환성: 기존 output 폴더의 구조화 파일도 포함
     output_dir = _safe_join(DATA_DIR, "output")
     if os.path.isdir(output_dir):
@@ -630,8 +651,16 @@ def _list_korea_excels() -> list[str]:
     """구조화법률 폴더 내 한국법 구조화 엑셀 파일 목록."""
     structured_dir = _safe_join(DATA_DIR, "output", "구조화법률")
     files = []
+
+    # 한국 하위 폴더에서 검색
     if os.path.isdir(structured_dir):
+        korea_dir = os.path.join(structured_dir, "한국")
+        if os.path.isdir(korea_dir):
+            files.extend(glob.glob(os.path.join(korea_dir, "*.xlsx")))
+
+        # 하위 호환성: 구조화법률 폴더 루트의 한국법 파일도 포함
         files.extend(_safe_glob(structured_dir, "구조화_한국_*.xlsx"))
+
     # 하위 호환성: 기존 output 폴더도 확인
     output_dir = _safe_join(DATA_DIR, "output")
     if os.path.isdir(output_dir):
@@ -645,6 +674,33 @@ def _list_korea_excels() -> list[str]:
 
 def _basename(path: str) -> str:
     return os.path.basename(path)
+
+
+def _detect_country_from_filename(filename: str) -> str:
+    """파일명에서 국가를 감지한다.
+
+    Returns:
+        국가명 ('미국', '유럽', '독일', '홍콩', '대만', '뉴질랜드', '한국') 또는 빈 문자열
+    """
+    filename_lower = filename.lower()
+
+    # 파일명 패턴 매칭
+    if '미국' in filename or 'usa' in filename_lower or 'united states' in filename_lower or 'title35' in filename_lower or 'westlaw' in filename_lower:
+        return '미국'
+    elif '유럽' in filename or 'epc' in filename_lower or 'european' in filename_lower or 'eu_' in filename_lower:
+        return '유럽'
+    elif '독일' in filename or 'germany' in filename_lower or 'bjnr' in filename_lower:
+        return '독일'
+    elif '홍콩' in filename or 'hongkong' in filename_lower or 'hong kong' in filename_lower or 'cap ' in filename_lower:
+        return '홍콩'
+    elif '대만' in filename or 'taiwan' in filename_lower:
+        return '대만'
+    elif '뉴질랜드' in filename or 'newzealand' in filename_lower or 'new zealand' in filename_lower:
+        return '뉴질랜드'
+    elif '한국' in filename or 'korea' in filename_lower:
+        return '한국'
+
+    return ''
 
 
 def _korean_law_name(source: str) -> str:
@@ -1008,7 +1064,7 @@ if page == "법령 구조화":
                 st.error("파일을 선택하거나 URL을 입력해주세요.")
                 st.stop()
 
-            # 구조화 파일은 구조화법률 폴더에 저장
+            # 구조화 파일은 구조화법률 폴더의 국가별 하위 폴더에 저장
             structured_dir = _safe_join(DATA_DIR, "output", "구조화법률")
             os.makedirs(structured_dir, exist_ok=True)
 
@@ -1021,7 +1077,16 @@ if page == "법령 구조화":
                 base_name_no_ext = _basename(struct_pdf_selected).rsplit('.', 1)[0]
                 base_name_structured = f"구조화_{struct_country}_{base_name_no_ext}"
 
-            excel_path = os.path.join(structured_dir, f"{base_name_structured}.xlsx")
+            # 국가별 하위 폴더 생성 및 저장
+            country = _detect_country_from_filename(base_name_structured)
+            if country:
+                country_dir = os.path.join(structured_dir, country)
+                os.makedirs(country_dir, exist_ok=True)
+                excel_path = os.path.join(country_dir, f"{base_name_structured}.xlsx")
+            else:
+                # 국가 감지 실패 시 루트 폴더에 저장
+                excel_path = os.path.join(structured_dir, f"{base_name_structured}.xlsx")
+
             save_structured_to_excel(df_structured, excel_path)
             st.write(f"저장 완료: `{excel_path}`")
 
@@ -1622,16 +1687,25 @@ elif page == "번역 실행":
             df_display = pd.DataFrame(rows_display)
             st.dataframe(df_display, use_container_width=True, hide_index=True)
 
-            # Excel 저장 (번역비교결과 폴더)
+            # Excel 저장 (번역비교결과 폴더의 국가별 하위 폴더)
             translation_dir = _safe_join(DATA_DIR, "output", "번역비교결과")
             os.makedirs(translation_dir, exist_ok=True)
+
+            # 국가별 하위 폴더 생성 및 저장
+            country = _detect_country_from_filename(base_name)
+            if country:
+                country_dir = os.path.join(translation_dir, country)
+                os.makedirs(country_dir, exist_ok=True)
+                xlsx_path = os.path.join(country_dir, f"{base_name}.xlsx")
+            else:
+                # 국가 감지 실패 시 루트 폴더에 저장
+                xlsx_path = os.path.join(translation_dir, f"{base_name}.xlsx")
 
             excel_buffer = io.BytesIO()
             with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
                 df.to_excel(writer, index=False, sheet_name="번역결과")
             excel_data = excel_buffer.getvalue()
 
-            xlsx_path = os.path.join(translation_dir, f"{base_name}.xlsx")
             with open(xlsx_path, "wb") as f:
                 f.write(excel_data)
 
