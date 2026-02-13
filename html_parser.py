@@ -507,3 +507,14 @@ def parse_china_html_to_dataframe(url: str) -> pd.DataFrame:
                 })
 
     return pd.DataFrame(rows)
+
+
+
+# ══════════════════════════════════════════════════════════════
+# 일본 법령 HTML 파싱
+# ══════════════════════════════════════════════════════════════
+
+def parse_japan_html(file_path: str) -> dict:
+    """일본 법령 HTML 파일을 파싱하여 구조화된 데이터를 반환한다."""
+    pass
+

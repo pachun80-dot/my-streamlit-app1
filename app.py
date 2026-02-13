@@ -680,12 +680,16 @@ def _detect_country_from_filename(filename: str) -> str:
     """파일명에서 국가를 감지한다.
 
     Returns:
-        국가명 ('미국', '유럽', '독일', '홍콩', '대만', '뉴질랜드', '한국') 또는 빈 문자열
+        국가명 ('미국', '유럽', '독일', '홍콩', '대만', '뉴질랜드', '한국', '중국', '일본') 또는 빈 문자열
     """
     filename_lower = filename.lower()
 
     # 파일명 패턴 매칭
-    if '미국' in filename or 'usa' in filename_lower or 'united states' in filename_lower or 'title35' in filename_lower or 'westlaw' in filename_lower:
+    if '일본' in filename or 'japan' in filename_lower or '334ac' in filename_lower:
+        return '일본'
+    elif '중국' in filename or 'china' in filename_lower or 'cnipa' in filename_lower:
+        return '중국'
+    elif '미국' in filename or 'usa' in filename_lower or 'united states' in filename_lower or 'title35' in filename_lower or 'westlaw' in filename_lower:
         return '미국'
     elif '유럽' in filename or 'epc' in filename_lower or 'european' in filename_lower or 'eu_' in filename_lower:
         return '유럽'
@@ -921,85 +925,153 @@ if page == "법령 구조화":
     st.markdown("""
     <div class="info-card">
         <p style="margin: 0; color: #64748b;">
-            법령 PDF/XML 파일 또는 HTML URL을 자동으로 분석하여 편/장/절/조/항/호 단위로 구조화합니다.
+            법령 PDF/XML/HTML 파일을 자동으로 분석하여 편/장/절/조/항/호 단위로 구조화합니다.
             구조화된 데이터는 Excel 파일로 저장되어 번역 작업에 활용됩니다.
         </p>
     </div>
     """, unsafe_allow_html=True)
 
-    # 입력 방식 선택
-    input_method = st.radio(
-        "입력 방식",
-        ["파일에서 선택", "HTML URL 입력"],
-        horizontal=True,
-        key="input_method"
+    # Step 1: 국가 선택
+    struct_country = st.selectbox(
+        "📍 국가 선택",
+        list(COUNTRY_MAP.keys()) + ["일본"],
+        key="struct_country",
+        help="먼저 국가를 선택하세요"
     )
 
-    if input_method == "파일에서 선택":
-        col_s1, col_s2 = st.columns(2)
+    # Step 2: 국가에 따라 입력 방식 표시
+    if struct_country == "일본":
+        # 일본은 파일 업로드만 지원
+        st.info("💡 일본 법령은 다운로드한 HTML 파일을 업로드하세요")
 
-        with col_s1:
-            struct_country = st.selectbox(
-                "국가 선택", list(COUNTRY_MAP.keys()), key="struct_country",
+        uploaded_file = st.file_uploader(
+            "일본 법령 HTML 파일 업로드",
+            type=['html'],
+            help="e-Gov 법령検索에서 다운로드한 HTML 파일",
+            key="japan_html_upload"
+        )
+
+        input_method = "파일 업로드"
+        html_url = None
+        struct_pdf_selected = None
+        use_ai_titles = False
+
+    elif struct_country in ["중국", "유럽(EPC)"]:
+        # 중국, 유럽은 HTML URL 또는 파일 업로드
+        input_method = st.radio(
+            "📥 입력 방식",
+            ["HTML URL 입력", "파일 업로드"],
+            horizontal=True,
+            key="input_method"
+        )
+
+        if input_method == "HTML URL 입력":
+            html_url = st.text_input(
+                "법령 HTML URL",
+                placeholder="https://www.cnipa.gov.cn/art/2020/11/23/art_97_155167.html" if struct_country == "중국" else "https://eur-lex.europa.eu/...",
+                key="html_url"
             )
+            uploaded_file = None
+            struct_pdf_selected = None
+            use_ai_titles = False
+        else:
+            html_url = None
             struct_folder = COUNTRY_MAP[struct_country]
-
-        with col_s2:
             struct_pdfs = _list_pdfs(struct_folder)
+
             if not struct_pdfs:
-                st.warning(f"`{DATA_DIR}/{struct_folder}/` 폴더에 PDF 또는 XML 파일을 넣어주세요.")
+                st.warning(f"`{DATA_DIR}/{struct_folder}/` 폴더에 파일을 넣어주세요.")
+
             struct_pdf_selected = st.selectbox(
-                "법령 파일 선택", struct_pdfs, format_func=_basename,
-                disabled=not struct_pdfs, key="struct_pdf",
+                "법령 파일 선택",
+                struct_pdfs,
+                format_func=_basename,
+                disabled=not struct_pdfs,
+                key="struct_pdf",
             )
+            uploaded_file = None
+            use_ai_titles = False
+    else:
+        # 기타 국가는 파일 업로드만
+        input_method = "파일 업로드"
+        html_url = None
+        uploaded_file = None
+
+        struct_folder = COUNTRY_MAP[struct_country]
+        struct_pdfs = _list_pdfs(struct_folder)
+
+        if not struct_pdfs:
+            st.warning(f"`{DATA_DIR}/{struct_folder}/` 폴더에 PDF 또는 XML 파일을 넣어주세요.")
+
+        struct_pdf_selected = st.selectbox(
+            "법령 파일 선택",
+            struct_pdfs,
+            format_func=_basename,
+            disabled=not struct_pdfs,
+            key="struct_pdf",
+        )
 
         use_ai_titles = st.checkbox(
             "AI로 조문 제목 추출",
             value=False,
-            help="Gemini AI가 각 조문에서 제목을 자동으로 추출합니다. 규칙 기반 추출로도 충분하므로 보통은 불필요합니다.",
+            help="Gemini AI가 각 조문에서 제목을 자동으로 추출합니다.",
             key="struct_ai_titles",
         )
 
-        struct_run = st.button(
-            "구조화 실행", type="primary",
-            disabled=not struct_pdfs, key="struct_run",
-        )
+    # 실행 버튼
+    can_run = False
+    if struct_country == "일본":
+        can_run = uploaded_file is not None
+    elif input_method == "HTML URL 입력":
+        can_run = html_url is not None and html_url.strip() != ""
     else:
-        # HTML URL 입력
-        html_url = st.text_input(
-            "법령 HTML URL",
-            placeholder="https://www.cnipa.gov.cn/art/2020/11/23/art_97_155167.html",
-            help="법령 HTML URL을 입력하세요\n- 중국: CNIPA 웹사이트 (예: 특허법, 상표법)\n- 유럽: EUR-Lex 사이트",
-            key="html_url"
-        )
+        can_run = struct_pdf_selected is not None
 
-        html_country = st.selectbox(
-            "국가 선택",
-            ["중국", "유럽(EPC)", "독일", "홍콩", "대만", "뉴질랜드"],
-            key="html_country"
-        )
-
-        struct_run = st.button(
-            "HTML 파싱 실행", type="primary",
-            disabled=not html_url, key="html_run",
-        )
-
-        # 파일 선택 변수 초기화 (HTML 모드에서는 미사용)
-        struct_pdfs = []
-        struct_pdf_selected = None
-        use_ai_titles = False
+    struct_run = st.button(
+        "🚀 구조화 실행",
+        type="primary",
+        disabled=not can_run,
+        key="struct_run",
+    )
 
     if struct_run:
         output_dir = os.path.join(DATA_DIR, "output")
         os.makedirs(output_dir, exist_ok=True)
 
         with st.status("법령 구조화 파싱 중...", expanded=True) as status:
+            # 일본 HTML 파일 업로드 처리
+            if struct_country == "일본" and uploaded_file:
+                st.write(f"일본 법령 HTML 파싱 중: {uploaded_file.name}")
+                try:
+                    # 임시 파일로 저장
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.html') as tmp_file:
+                        tmp_file.write(uploaded_file.getvalue())
+                        tmp_path = tmp_file.name
+
+                    # 일본 파서 사용
+                    from japan_parser import parse_japan_html_to_dataframe
+                    df_structured = parse_japan_html_to_dataframe(tmp_path)
+
+                    st.write(f"{len(df_structured)}개 항목 추출 (章/節/條/項/號 단위)")
+
+                    # 임시 파일 삭제
+                    os.unlink(tmp_path)
+
+                    # 파일명 생성
+                    base_name = os.path.splitext(uploaded_file.name)[0]
+                except Exception as e:
+                    st.error(f"일본 법령 파싱 실패: {str(e)}")
+                    import traceback
+                    st.error(traceback.format_exc())
+                    st.stop()
+
             # HTML URL 입력 방식
-            if input_method == "HTML URL 입력":
+            elif input_method == "HTML URL 입력":
                 st.write(f"HTML 파싱 중: {html_url}")
                 try:
                     # 국가별 파서 선택
-                    if html_country == "중국":
+                    if struct_country == "중국":
                         df_structured = parse_china_html_to_dataframe(html_url)
                     else:
                         df_structured = parse_eu_html_to_dataframe(html_url)
@@ -1009,7 +1081,7 @@ if page == "법령 구조화":
                     # 파일명 생성 (URL에서 추출)
                     import hashlib
                     url_hash = hashlib.md5(html_url.encode()).hexdigest()[:8]
-                    base_name = f"{html_country}_HTML_{url_hash}"
+                    base_name = f"{struct_country}_HTML_{url_hash}"
                 except Exception as e:
                     st.error(f"HTML 파싱 실패: {str(e)}")
                     st.stop()
