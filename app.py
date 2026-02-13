@@ -1031,6 +1031,21 @@ if page == "법령 구조화":
         st.subheader("구조화 결과 미리보기")
         st.dataframe(df_structured.head(20), use_container_width=True, hide_index=True)
 
+        # Excel 다운로드 버튼 추가
+        import io
+        excel_buffer = io.BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
+            df_structured.to_excel(writer, index=False, sheet_name="법조문")
+        excel_data = excel_buffer.getvalue()
+
+        st.download_button(
+            label="📥 구조화 Excel 다운로드",
+            data=excel_data,
+            file_name=os.path.basename(excel_path),
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="structured_excel_download"
+        )
+
 # ══════════════════════════════════════════════════════════════
 # 페이지 2: 번역 실행 (구조화 엑셀 → 번역 + 한국법 매칭)
 # ══════════════════════════════════════════════════════════════
