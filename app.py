@@ -17,7 +17,7 @@ from pdf_parser import (
     parse_pdf, split_articles, _detect_lang,
     extract_structured_articles, save_structured_to_excel
 )
-from html_parser import parse_eu_html_to_dataframe
+from html_parser import parse_eu_html_to_dataframe, parse_china_html_to_dataframe
 from translator import translate_batch, _clean_translation_output
 from embedder import (
     find_similar_korean,
@@ -968,14 +968,14 @@ if page == "법령 구조화":
         # HTML URL 입력
         html_url = st.text_input(
             "법령 HTML URL",
-            placeholder="https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:42013A0620(01)",
-            help="유럽 법령 HTML URL을 입력하세요 (예: EUR-Lex 사이트의 HTML 페이지)",
+            placeholder="https://www.cnipa.gov.cn/art/2020/11/23/art_97_155167.html",
+            help="법령 HTML URL을 입력하세요\n- 중국: CNIPA 웹사이트 (예: 특허법, 상표법)\n- 유럽: EUR-Lex 사이트",
             key="html_url"
         )
 
         html_country = st.selectbox(
             "국가 선택",
-            ["유럽(EPC)", "독일", "홍콩", "대만", "뉴질랜드"],
+            ["중국", "유럽(EPC)", "독일", "홍콩", "대만", "뉴질랜드"],
             key="html_country"
         )
 
@@ -998,7 +998,12 @@ if page == "법령 구조화":
             if input_method == "HTML URL 입력":
                 st.write(f"HTML 파싱 중: {html_url}")
                 try:
-                    df_structured = parse_eu_html_to_dataframe(html_url)
+                    # 국가별 파서 선택
+                    if html_country == "중국":
+                        df_structured = parse_china_html_to_dataframe(html_url)
+                    else:
+                        df_structured = parse_eu_html_to_dataframe(html_url)
+
                     st.write(f"{len(df_structured)}개 항목 추출 (조/항/호 단위)")
 
                     # 파일명 생성 (URL에서 추출)

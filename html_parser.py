@@ -1,6 +1,6 @@
 """HTML 법령 파싱 모듈
 
-유럽 법령 등 HTML 형식으로 제공되는 법령을 파싱합니다.
+유럽 법령, 중국 법령 등 HTML 형식으로 제공되는 법령을 파싱합니다.
 """
 import re
 import requests
@@ -335,3 +335,175 @@ def save_structured_to_excel(df: pd.DataFrame, output_path: str):
                 len(col)
             )
             worksheet.column_dimensions[chr(65 + idx)].width = min(max_length + 2, 50)
+
+
+# ══════════════════════════════════════════════════════════════
+# 중국 법령 HTML 파싱
+# ══════════════════════════════════════════════════════════════
+
+def parse_china_html(url: str) -> dict:
+    """중국 법령 HTML을 파싱하여 구조화된 데이터를 반환한다.
+
+    Args:
+        url: 중국 법령 HTML URL (예: CNIPA 웹사이트)
+
+    Returns:
+        {
+            'articles': [{'id': '第X条', 'title': '', 'text': '...', 'hierarchy': {'chapter': '第X章 ...'}}, ...]
+        }
+    """
+    # HTML 다운로드
+    response = requests.get(url)
+    response.encoding = 'utf-8'
+    html = response.text
+
+    # BeautifulSoup으로 파싱
+    soup = BeautifulSoup(html, 'html.parser')
+
+    # 전체 텍스트 추출
+    text = soup.get_text()
+
+    # 조문 파싱
+    articles = _parse_china_articles(text)
+
+    return {
+        'articles': articles
+    }
+
+
+def _parse_china_articles(text: str) -> list[dict]:
+    """중국 법령 텍스트에서 조문을 파싱한다.
+
+    중국 법령 구조:
+    - 第X章: 장 제목
+    - 第X条: 조문 번호
+    - (一), (二), (三): 항목 번호
+    """
+    articles = []
+
+    # 계층 구조 추출 (章)
+    hierarchy = _extract_china_hierarchy(text)
+
+    # 조문 패턴: 第X条 (X는 한자 숫자 또는 아라비아 숫자)
+    # 한자 숫자: 一二三四五六七八九十百千
+    article_pattern = re.compile(
+        r'第([一二三四五六七八九十百千\d]+)条\s*(.*?)(?=第[一二三四五六七八九十百千\d]+条|$)',
+        re.DOTALL
+    )
+
+    for match in article_pattern.finditer(text):
+        article_num = match.group(1).strip()
+        article_content = match.group(2).strip()
+
+        article_id = f"第{article_num}条"
+
+        # 현재 조문이 속한 장 찾기
+        article_pos = match.start()
+        current_chapter = _find_china_chapter_at_position(hierarchy, article_pos)
+
+        articles.append({
+            'id': article_id,
+            'title': '',  # 중국법은 조문 제목이 없음
+            'text': article_content,
+            'hierarchy': {'chapter': current_chapter}
+        })
+
+    return articles
+
+
+def _extract_china_hierarchy(text: str) -> list[dict]:
+    """중국 법령 텍스트에서 계층 구조(章)를 추출한다."""
+    hierarchy = []
+
+    # 章 패턴: 第X章 제목
+    chapter_pattern = re.compile(
+        r'第([一二三四五六七八九十百千\d]+)章\s+([^\n第]+)',
+        re.MULTILINE
+    )
+
+    for match in chapter_pattern.finditer(text):
+        chapter_num = match.group(1).strip()
+        chapter_title = match.group(2).strip()
+
+        # 제목 정리 (공백 정규화)
+        chapter_title = re.sub(r'\s+', ' ', chapter_title)
+
+        hierarchy.append({
+            'type': 'chapter',
+            'title': f'第{chapter_num}章 {chapter_title}',
+            'start_pos': match.start()
+        })
+
+    return hierarchy
+
+
+def _find_china_chapter_at_position(hierarchy: list[dict], position: int) -> str:
+    """특정 위치에서의 장(章) 정보를 반환한다."""
+    current_chapter = ""
+
+    for h in hierarchy:
+        if h['start_pos'] > position:
+            break
+        if h['type'] == 'chapter':
+            current_chapter = h['title']
+
+    return current_chapter
+
+
+def parse_china_html_to_dataframe(url: str) -> pd.DataFrame:
+    """중국 법령 HTML을 파싱하여 구조화된 DataFrame을 반환한다.
+
+    Args:
+        url: 중국 법령 HTML URL
+
+    Returns:
+        DataFrame with columns: ['편', '장', '절', '조문번호', '조문제목', '항', '호', '목', '세목', '원문']
+    """
+    # HTML 파싱
+    data = parse_china_html(url)
+
+    rows = []
+
+    # 조문 추가
+    for article in data['articles']:
+        article_id = article['id']
+        text = article['text']
+        chapter = article['hierarchy']['chapter']
+
+        # (一), (二), (三) 패턴으로 항목 분리
+        item_pattern = re.compile(r'[（\(]([一二三四五六七八九十]+)[）\)]\s*(.*?)(?=[（\(][一二三四五六七八九十]+[）\)]|$)', re.DOTALL)
+        items = list(item_pattern.finditer(text))
+
+        if not items:
+            # 항목이 없는 경우 전체를 하나로
+            rows.append({
+                '편': '',
+                '장': chapter,
+                '절': '',
+                '조문번호': article_id,
+                '조문제목': '',
+                '항': '',
+                '호': '',
+                '목': '',
+                '세목': '',
+                '원문': text
+            })
+        else:
+            for item_match in items:
+                item_num = item_match.group(1)
+                item_text = item_match.group(2).strip()
+
+                rows.append({
+                    '편': '',
+                    '장': chapter,
+                    '절': '',
+                    '조문번호': article_id,
+                    '조문제목': '',
+                    '항': item_num,
+                    '호': '',
+                    '목': '',
+                    '세목': '',
+                    '원문': item_text
+                })
+
+    return pd.DataFrame(rows)
